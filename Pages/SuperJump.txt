@@ -1,0 +1,1028 @@
+
+import React, { useEffect, useRef, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Trophy, RotateCcw, Play, Heart, Coins, Star, ShoppingBag, Zap, TrendingUp } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+
+export default function MarioGame() {
+  const canvasRef = useRef(null);
+  const [gameState, setGameState] = useState('ready'); // ready, playing, gameOver, won, levelComplete
+  const [score, setScore] = useState(0);
+  const [lives, setLives] = useState(3);
+  const [currentLevel, setCurrentLevel] = useState(1);
+  const [totalCoins, setTotalCoins] = useState(0); // New state for total coins across levels
+  const [showShop, setShowShop] = useState(false); // New state to toggle shop visibility
+  const gameLoopRef = useRef(null);
+  const keysRef = useRef({});
+
+  // Powerups state
+  const [powerups, setPowerups] = useState({
+    extraLife: 0, // Consumable, handled immediately
+    speedBoost: false, // Upgrade
+    superJump: false, // Upgrade
+    shield: 0, // Consumable, count
+    doubleCoins: false // Upgrade
+  });
+
+  // Shop items
+  const shopItems = [
+    {
+      id: 'extraLife',
+      name: 'Extra Leben',
+      description: 'Gibt dir ein zusätzliches Leben',
+      icon: Heart,
+      cost: 50,
+      color: 'bg-red-500',
+      type: 'consumable'
+    },
+    {
+      id: 'speedBoost',
+      name: 'Geschwindigkeits-Boost',
+      description: 'Bewege dich 50% schneller',
+      icon: Zap,
+      cost: 100,
+      color: 'bg-yellow-500',
+      type: 'upgrade'
+    },
+    {
+      id: 'superJump',
+      name: 'Super Sprung',
+      description: 'Springe viel höher',
+      icon: TrendingUp,
+      cost: 150,
+      color: 'bg-blue-500',
+      type: 'upgrade'
+    },
+    {
+      id: 'shield',
+      name: 'Schutzschild',
+      description: 'Schützt vor einem Treffer',
+      icon: ShoppingBag,
+      cost: 80,
+      color: 'bg-purple-500',
+      type: 'consumable'
+    },
+    {
+      id: 'doubleCoins',
+      name: 'Doppelte Münzen',
+      description: 'Verdopple alle Münzen',
+      icon: Coins,
+      cost: 200,
+      color: 'bg-green-500',
+      type: 'upgrade'
+    }
+  ];
+
+  // Game constants with powerup modifications
+  const GRAVITY = 0.6;
+  const JUMP_FORCE = powerups.superJump ? -20 : -15; // JUMP_FORCE now depends on superJump powerup
+  const MOVE_SPEED = powerups.speedBoost ? 7.5 : 5; // MOVE_SPEED now depends on speedBoost powerup
+
+  // Level configurations
+  const levels = {
+    1: {
+      name: "Grüne Hügel",
+      platforms: [
+        { x: 0, y: 550, width: 800, height: 50, color: '#8B4513' },
+        { x: 200, y: 450, width: 150, height: 20, color: '#228B22' },
+        { x: 400, y: 350, width: 150, height: 20, color: '#228B22' },
+        { x: 600, y: 250, width: 150, height: 20, color: '#228B22' },
+        { x: 300, y: 200, width: 200, height: 20, color: '#228B22' },
+        { x: 100, y: 150, width: 150, height: 20, color: '#228B22' },
+      ],
+      coins: [
+        { x: 250, y: 400, size: 20, collected: false },
+        { x: 450, y: 300, size: 20, collected: false },
+        { x: 650, y: 200, size: 20, collected: false },
+        { x: 400, y: 150, size: 20, collected: false },
+        { x: 150, y: 100, size: 20, collected: false },
+      ],
+      enemies: [
+        { x: 400, y: 310, width: 30, height: 30, velocityX: 2, color: '#8B0000', minX: 400, maxX: 550 },
+        { x: 200, y: 410, width: 30, height: 30, velocityX: 2, color: '#8B0000', minX: 200, maxX: 350 },
+      ],
+      trees: [
+        { x: 50, y: 490 }, // y = 550 (ground) - 60 (tree height)
+        { x: 500, y: 490 },
+        { x: 700, y: 490 },
+      ],
+      goal: { x: 150, y: 100, width: 50, height: 50 },
+      bgColor: '#87CEEB'
+    },
+    2: {
+      name: "Wüsten-Canyon",
+      platforms: [
+        { x: 0, y: 550, width: 800, height: 50, color: '#D2691E' },
+        { x: 100, y: 480, width: 100, height: 20, color: '#DEB887' },
+        { x: 300, y: 420, width: 80, height: 20, color: '#DEB887' },
+        { x: 500, y: 360, width: 100, height: 20, color: '#DEB887' },
+        { x: 650, y: 300, width: 80, height: 20, color: '#DEB887' },
+        { x: 550, y: 220, width: 120, height: 20, color: '#DEB887' },
+        { x: 350, y: 180, width: 100, height: 20, color: '#DEB887' },
+        { x: 150, y: 120, width: 120, height: 20, color: '#DEB887' },
+      ],
+      coins: [
+        { x: 150, y: 440, size: 20, collected: false },
+        { x: 340, y: 380, size: 20, collected: false },
+        { x: 550, y: 320, size: 20, collected: false },
+        { x: 690, y: 260, size: 20, collected: false },
+        { x: 600, y: 180, size: 20, collected: false },
+        { x: 400, y: 140, size: 20, collected: false },
+        { x: 200, y: 80, size: 20, collected: false },
+      ],
+      enemies: [
+        { x: 300, y: 380, width: 30, height: 30, velocityX: 2.5, color: '#8B4500', minX: 300, maxX: 380 },
+        { x: 500, y: 320, width: 30, height: 30, velocityX: 2.5, color: '#8B4500', minX: 500, maxX: 600 },
+        { x: 350, y: 140, width: 30, height: 30, velocityX: 2, color: '#8B4500', minX: 350, maxX: 450 },
+      ],
+      trees: [
+        { x: 30, y: 490, type: 'cactus' }, // y = 550 (ground) - 60 (tree height)
+        { x: 600, y: 490, type: 'cactus' },
+        { x: 750, y: 490, type: 'cactus' },
+      ],
+      goal: { x: 180, y: 60, width: 50, height: 60 },
+      bgColor: '#FFE4B5'
+    },
+    3: {
+      name: "Schneeberg",
+      platforms: [
+        { x: 0, y: 550, width: 800, height: 50, color: '#4682B4' },
+        { x: 650, y: 480, width: 150, height: 20, color: '#E0FFFF' },
+        { x: 450, y: 420, width: 120, height: 20, color: '#E0FFFF' },
+        { x: 200, y: 380, width: 100, height: 20, color: '#E0FFFF' },
+        { x: 50, y: 320, width: 120, height: 20, color: '#E0FFFF' },
+        { x: 250, y: 260, width: 100, height: 20, color: '#E0FFFF' },
+        { x: 450, y: 200, width: 120, height: 20, color: '#E0FFFF' },
+        { x: 650, y: 150, width: 120, height: 20, color: '#E0FFFF' },
+        { x: 450, y: 80, width: 150, height: 20, color: '#E0FFFF' },
+      ],
+      coins: [
+        { x: 700, y: 440, size: 20, collected: false },
+        { x: 500, y: 380, size: 20, collected: false },
+        { x: 250, y: 340, size: 20, collected: false },
+        { x: 100, y: 280, size: 20, collected: false },
+        { x: 300, y: 220, size: 20, collected: false },
+        { x: 500, y: 160, size: 20, collected: false },
+        { x: 700, y: 110, size: 20, collected: false },
+        { x: 525, y: 40, size: 20, collected: false },
+      ],
+      enemies: [
+        { x: 650, y: 440, width: 30, height: 30, velocityX: 3, color: '#1E90FF', minX: 650, maxX: 800 },
+        { x: 450, y: 380, width: 30, height: 30, velocityX: 2.5, color: '#1E90FF', minX: 450, maxX: 570 },
+        { x: 250, y: 220, width: 30, height: 30, velocityX: 2.5, color: '#1E90FF', minX: 250, maxX: 350 },
+        { x: 450, y: 160, width: 30, height: 30, velocityX: 3, color: '#1E90FF', minX: 450, maxX: 570 },
+      ],
+      trees: [
+        { x: 300, y: 490, type: 'pine' }, // y = 550 (ground) - 60 (tree height)
+        { x: 550, y: 490, type: 'pine' },
+        { x: 100, y: 490, type: 'pine' },
+      ],
+      goal: { x: 500, y: 20, width: 50, height: 60 },
+      bgColor: '#B0E0E6'
+    },
+    4: {
+      name: "Lava-Festung",
+      platforms: [
+        { x: 0, y: 550, width: 150, height: 50, color: '#8B0000' },
+        { x: 650, y: 550, width: 150, height: 50, color: '#8B0000' },
+        { x: 200, y: 480, width: 80, height: 15, color: '#B22222' },
+        { x: 350, y: 430, width: 80, height: 15, color: '#B22222' },
+        { x: 520, y: 480, width: 80, height: 15, color: '#B22222' },
+        { x: 100, y: 400, width: 100, height: 15, color: '#B22222' },
+        { x: 300, y: 340, width: 80, height: 15, color: '#B22222' },
+        { x: 500, y: 380, width: 100, height: 15, color: '#B22222' },
+        { x: 650, y: 320, width: 100, height: 15, color: '#B22222' },
+        { x: 450, y: 260, width: 120, height: 15, color: '#B22222' },
+        { x: 250, y: 200, width: 100, height: 15, color: '#B22222' },
+        { x: 500, y: 140, width: 100, height: 15, color: '#B22222' },
+        { x: 300, y: 80, width: 150, height: 15, color: '#B22222' },
+      ],
+      coins: [
+        { x: 240, y: 440, size: 20, collected: false },
+        { x: 390, y: 390, size: 20, collected: false },
+        { x: 150, y: 360, size: 20, collected: false },
+        { x: 340, y: 300, size: 20, collected: false },
+        { x: 550, y: 340, size: 20, collected: false },
+        { x: 700, y: 280, size: 20, collected: false },
+        { x: 500, y: 220, size: 20, collected: false },
+        { x: 300, y: 160, size: 20, collected: false },
+        { x: 550, y: 100, size: 20, collected: false },
+        { x: 375, y: 40, size: 20, collected: false },
+      ],
+      enemies: [
+        { x: 200, y: 440, width: 30, height: 30, velocityX: 3, color: '#FF4500', minX: 200, maxX: 280 },
+        { x: 350, y: 390, width: 30, height: 30, velocityX: 3, color: '#FF4500', minX: 350, maxX: 430 },
+        { x: 300, y: 300, width: 30, height: 30, velocityX: 3.5, color: '#FF4500', minX: 300, maxX: 380 },
+        { x: 500, y: 340, width: 30, height: 30, velocityX: 3.5, color: '#FF4500', minX: 500, maxX: 600 },
+        { x: 450, y: 220, width: 30, height: 30, velocityX: 3, color: '#FF4500', minX: 450, maxX: 570 },
+        { x: 300, y: 40, width: 30, height: 30, velocityX: 4, color: '#FF4500', minX: 300, maxX: 450 },
+      ],
+      trees: [
+        { x: 50, y: 490, type: 'dead' }, // y = 550 (ground) - 60 (tree height)
+        { x: 700, y: 490, type: 'dead' },
+      ],
+      goal: { x: 350, y: 20, width: 50, height: 60 },
+      bgColor: '#2F1B1B'
+    }
+  };
+
+  // Game state ref
+  const gameRef = useRef({
+    player: {
+      x: 100,
+      y: 300,
+      width: 40,
+      height: 40,
+      velocityY: 0,
+      velocityX: 0,
+      isJumping: false,
+      color: '#FF0000',
+      direction: 'right',
+      hasShield: false // New player property for shield
+    },
+    platforms: [],
+    coins: [],
+    enemies: [],
+    trees: [],
+    goal: {}
+  });
+
+  const drawTree = (ctx, x, y, type = 'normal') => {
+    // All trees are designed to be around 60px tall, with 'y' being the top point
+    if (type === 'cactus') {
+      // Kaktus für Wüste
+      ctx.fillStyle = '#228B22'; // Dark green
+      ctx.fillRect(x + 15, y, 10, 60); // Main trunk (40px wide, 60px high)
+      ctx.fillRect(x + 5, y + 20, 10, 20); // Left arm
+      ctx.fillRect(x + 25, y + 15, 10, 25); // Right arm
+      
+      // Stacheln
+      ctx.strokeStyle = '#006400'; // Even darker green
+      ctx.lineWidth = 1;
+      for (let i = 0; i < 8; i++) {
+        // Main trunk spines
+        ctx.beginPath();
+        ctx.moveTo(x + 15, y + i * 8);
+        ctx.lineTo(x + 12, y + i * 8);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(x + 25, y + i * 8);
+        ctx.lineTo(x + 28, y + i * 8);
+        ctx.stroke();
+        // Left arm spines
+        if (i < 3) {
+          ctx.beginPath();
+          ctx.moveTo(x + 15, y + 20 + i * 8);
+          ctx.lineTo(x + 18, y + 20 + i * 8);
+          ctx.stroke();
+        }
+        // Right arm spines
+        if (i < 4) {
+          ctx.beginPath();
+          ctx.moveTo(x + 25, y + 15 + i * 8);
+          ctx.lineTo(x + 22, y + 15 + i * 8);
+          ctx.stroke();
+        }
+      }
+    } else if (type === 'pine') {
+      // Tannenbaum für Schnee
+      ctx.fillStyle = '#8B4513'; // Brown trunk
+      ctx.fillRect(x + 15, y + 40, 8, 20); // Trunk (adjusted x for centering with new leaves)
+      
+      ctx.fillStyle = '#0F5F0F'; // Dark green for leaves
+      ctx.beginPath();
+      ctx.moveTo(x + 19, y); // Top peak
+      ctx.lineTo(x + 5, y + 25); // Bottom-left of top layer
+      ctx.lineTo(x + 33, y + 25); // Bottom-right of top layer
+      ctx.closePath();
+      ctx.fill();
+      
+      ctx.beginPath();
+      ctx.moveTo(x + 19, y + 15); // Peak of middle layer
+      ctx.lineTo(x + 8, y + 35); // Bottom-left of middle layer
+      ctx.lineTo(x + 30, y + 35); // Bottom-right of middle layer
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.moveTo(x + 19, y + 28); // Peak of bottom layer
+      ctx.lineTo(x + 11, y + 45); // Bottom-left of bottom layer
+      ctx.lineTo(x + 27, y + 45); // Bottom-right of bottom layer
+      ctx.closePath();
+      ctx.fill();
+      
+      // Schnee auf Baum
+      ctx.fillStyle = '#FFFFFF'; // White snow
+      ctx.beginPath();
+      ctx.arc(x + 19, y, 5, 0, Math.PI * 2); // Top snow cap
+      ctx.arc(x + 5, y + 25, 4, 0, Math.PI * 2); // Snow on left branch
+      ctx.arc(x + 33, y + 25, 4, 0, Math.PI * 2); // Snow on right branch
+      ctx.fill();
+    } else if (type === 'dead') {
+      // Toter Baum für Lava-Level (60px high)
+      ctx.strokeStyle = '#2F2F2F'; // Dark grey/brown
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(x + 20, y + 60); // Base of trunk
+      ctx.lineTo(x + 20, y + 20); // Top of trunk
+      ctx.stroke();
+      
+      ctx.lineWidth = 3;
+      // Branches
+      ctx.beginPath();
+      ctx.moveTo(x + 20, y + 30);
+      ctx.lineTo(x + 10, y + 25);
+      ctx.moveTo(x + 20, y + 40);
+      ctx.lineTo(x + 30, y + 35);
+      ctx.stroke();
+    } else {
+      // Normaler Baum (default for Level 1) (60px high)
+      ctx.fillStyle = '#8B4513'; // Brown trunk
+      ctx.fillRect(x + 15, y + 30, 10, 30); // Trunk
+      
+      ctx.fillStyle = '#228B22'; // Green leaves
+      // Bottom layer of leaves
+      ctx.beginPath();
+      ctx.arc(x + 20, y + 30, 20, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Top layers of leaves for a fuller look
+      ctx.fillStyle = '#1E7B1E'; // Slightly different green for depth
+      ctx.beginPath();
+      ctx.arc(x + 10, y + 25, 15, 0, Math.PI * 2);
+      ctx.arc(x + 30, y + 25, 15, 0, Math.PI * 2);
+      ctx.arc(x + 20, y + 15, 18, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  };
+
+  // Function to handle buying items from the shop
+  const buyItem = (item) => {
+    if (totalCoins >= item.cost) {
+      setTotalCoins(prev => prev - item.cost);
+      
+      if (item.id === 'extraLife') {
+        setLives(prev => prev + 1);
+      } else if (item.id === 'shield') {
+        setPowerups(prev => ({ ...prev, shield: prev.shield + 1 }));
+        // Ensure player shield status is updated if they are currently playing
+        if (gameRef.current.player) {
+          gameRef.current.player.hasShield = true;
+        }
+      } else {
+        // For upgrade type powerups, set them to true
+        setPowerups(prev => ({ ...prev, [item.id]: true }));
+      }
+    }
+  };
+
+  const loadLevel = (levelNum) => {
+    const level = levels[levelNum];
+    gameRef.current = {
+      player: {
+        x: 100,
+        y: 300,
+        width: 40,
+        height: 40,
+        velocityY: 0,
+        velocityX: 0,
+        isJumping: false,
+        color: '#FF0000',
+        direction: 'right',
+        hasShield: powerups.shield > 0 // Initialize player shield status based on powerups state
+      },
+      platforms: JSON.parse(JSON.stringify(level.platforms)),
+      coins: JSON.parse(JSON.stringify(level.coins)),
+      enemies: JSON.parse(JSON.stringify(level.enemies)),
+      trees: JSON.parse(JSON.stringify(level.trees || [])), // Include trees
+      goal: { ...level.goal }
+    };
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      keysRef.current[e.key] = true;
+      if ((e.key === ' ' || e.key === 'ArrowUp') && gameState === 'playing') {
+        e.preventDefault();
+        jump();
+      }
+    };
+
+    const handleKeyUp = (e) => {
+      keysRef.current[e.key] = false;
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [gameState]);
+
+  const jump = () => {
+    const player = gameRef.current.player;
+    if (!player.isJumping) {
+      player.velocityY = JUMP_FORCE; // Use JUMP_FORCE from constants
+      player.isJumping = true;
+    }
+  };
+
+  const startGame = () => {
+    // Reset powerups and total coins when starting a new game
+    setPowerups({
+      extraLife: 0,
+      speedBoost: false,
+      superJump: false,
+      shield: 0,
+      doubleCoins: false
+    });
+    setTotalCoins(0);
+    loadLevel(1);
+    setScore(0);
+    setLives(3);
+    setCurrentLevel(1);
+    setGameState('playing');
+    setShowShop(false); // Hide shop when starting game
+  };
+
+  const nextLevel = () => {
+    const next = currentLevel + 1;
+    if (next <= 4) {
+      loadLevel(next);
+      setCurrentLevel(next);
+      setGameState('playing');
+      setShowShop(false); // Hide shop after selecting next level
+    } else {
+      setGameState('won');
+      setShowShop(false); // Hide shop after winning
+    }
+  };
+
+  const restartLevel = () => {
+    loadLevel(currentLevel);
+    setGameState('playing');
+    setShowShop(false); // Hide shop when restarting level
+  };
+
+  const gameLoop = () => {
+    if (gameState !== 'playing') return;
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    const game = gameRef.current;
+    const player = game.player;
+    const level = levels[currentLevel];
+
+    // Clear canvas with level-specific background
+    ctx.fillStyle = level.bgColor;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Add background details based on level
+    if (currentLevel === 4) {
+      // Lava effect at bottom
+      ctx.fillStyle = '#FF4500';
+      for (let i = 0; i < 20; i++) {
+        const x = (Date.now() / 50 + i * 40) % canvas.width;
+        ctx.beginPath();
+        ctx.arc(x, 580, 10, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Draw trees (behind everything else)
+    game.trees.forEach(tree => {
+      drawTree(ctx, tree.x, tree.y, tree.type);
+    });
+
+    // Handle player movement
+    player.velocityX = 0;
+    if (keysRef.current['ArrowLeft'] || keysRef.current['a']) {
+      player.velocityX = -MOVE_SPEED; // Use MOVE_SPEED from constants
+      player.direction = 'left';
+    }
+    if (keysRef.current['ArrowRight'] || keysRef.current['d']) {
+      player.velocityX = MOVE_SPEED; // Use MOVE_SPEED from constants
+      player.direction = 'right';
+    }
+
+    // Apply gravity
+    player.velocityY += GRAVITY;
+    player.y += player.velocityY;
+    player.x += player.velocityX;
+
+    // Keep player in bounds
+    if (player.x < 0) player.x = 0;
+    if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
+
+    // Check platform collisions
+    let onGround = false;
+    game.platforms.forEach(platform => {
+      if (
+        player.x < platform.x + platform.width &&
+        player.x + player.width > platform.x &&
+        player.y + player.height > platform.y &&
+        player.y + player.height < platform.y + platform.height &&
+        player.velocityY > 0
+      ) {
+        player.y = platform.y - player.height;
+        player.velocityY = 0;
+        player.isJumping = false;
+        onGround = true;
+      }
+    });
+
+    // Check if fell off
+    if (player.y > canvas.height) {
+      // If player has a shield, consume it instead of losing a life
+      if (player.hasShield) {
+        player.hasShield = false; // Player loses shield
+        setPowerups(prev => ({ ...prev, shield: Math.max(0, prev.shield - 1) }));
+        // Player is respawned without losing a life
+        player.x = 100;
+        player.y = 300;
+        player.velocityY = 0;
+      } else {
+        setLives(prev => {
+          const newLives = prev - 1;
+          if (newLives <= 0) {
+            setGameState('gameOver');
+          } else {
+            player.x = 100;
+            player.y = 300;
+            player.velocityY = 0;
+          }
+          return newLives;
+        });
+      }
+    }
+
+    // Draw platforms
+    game.platforms.forEach(platform => {
+      ctx.fillStyle = platform.color;
+      ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
+      
+      ctx.strokeStyle = currentLevel === 4 ? '#8B0000' : '#2F4F2F';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(platform.x, platform.y, platform.width, platform.height);
+    });
+
+    // Update and draw enemies
+    game.enemies.forEach(enemy => {
+      enemy.x += enemy.velocityX;
+      
+      // Bounce enemies within their bounds
+      if (enemy.x <= enemy.minX || enemy.x + enemy.width >= enemy.maxX) {
+        enemy.velocityX *= -1;
+      }
+
+      // Draw enemy
+      ctx.fillStyle = enemy.color;
+      ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
+      
+      // Add eyes
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath();
+      ctx.arc(enemy.x + 10, enemy.y + 10, 5, 0, Math.PI * 2);
+      ctx.arc(enemy.x + 20, enemy.y + 10, 5, 0, Math.PI * 2);
+      ctx.fill();
+      
+      ctx.fillStyle = '#000000';
+      ctx.beginPath();
+      ctx.arc(enemy.x + 10, enemy.y + 10, 2, 0, Math.PI * 2);
+      ctx.arc(enemy.x + 20, enemy.y + 10, 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Check collision with player
+      if (
+        player.x < enemy.x + enemy.width &&
+        player.x + player.width > enemy.x &&
+        player.y < enemy.y + enemy.height &&
+        player.y + player.height > enemy.y
+      ) {
+        // If player has a shield, consume it instead of losing a life
+        if (player.hasShield) {
+          player.hasShield = false; // Player loses shield
+          setPowerups(prev => ({ ...prev, shield: Math.max(0, prev.shield - 1) }));
+          // Player is unaffected by collision, but loses shield
+        } else {
+          setLives(prev => {
+            const newLives = prev - 1;
+            if (newLives <= 0) {
+              setGameState('gameOver');
+            } else {
+              player.x = 100;
+              player.y = 300;
+              player.velocityY = 0;
+            }
+            return newLives;
+          });
+        }
+      }
+    });
+
+    // Draw and check coins
+    game.coins.forEach(coin => {
+      if (!coin.collected) {
+        const time = Date.now() / 200;
+        ctx.fillStyle = '#FFD700';
+        ctx.beginPath();
+        ctx.arc(coin.x, coin.y, coin.size / 2 + Math.sin(time) * 2, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.strokeStyle = '#FFA500';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(coin.x, coin.y, coin.size / 2, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Check collision
+        const dist = Math.sqrt(
+          Math.pow(player.x + player.width / 2 - coin.x, 2) +
+          Math.pow(player.y + player.height / 2 - coin.y, 2)
+        );
+        if (dist < player.width / 2 + coin.size / 2) {
+          coin.collected = true;
+          const coinValue = powerups.doubleCoins ? 20 : 10; // Double coins if powerup is active
+          setScore(prev => prev + coinValue);
+          setTotalCoins(prev => prev + coinValue); // Add to total coins
+        }
+      }
+    });
+
+    // Draw goal (flag)
+    const goal = game.goal;
+    ctx.fillStyle = '#FFD700';
+    ctx.fillRect(goal.x, goal.y, 10, goal.height);
+    ctx.fillStyle = '#FF0000';
+    ctx.beginPath();
+    ctx.moveTo(goal.x + 10, goal.y);
+    ctx.lineTo(goal.x + 40, goal.y + 15);
+    ctx.lineTo(goal.x + 10, goal.y + 30);
+    ctx.closePath();
+    ctx.fill();
+
+    // Check if reached goal
+    if (
+      player.x < goal.x + goal.width &&
+      player.x + player.width > goal.x &&
+      player.y < goal.y + goal.height &&
+      player.y + player.height > goal.y
+    ) {
+      setGameState('levelComplete');
+    }
+
+    // Draw player
+    ctx.fillStyle = player.color;
+    ctx.fillRect(player.x, player.y, player.width, player.height);
+    
+    ctx.fillStyle = '#8B0000';
+    ctx.fillRect(player.x, player.y, player.width, 10);
+    
+    ctx.fillStyle = '#FFE4C4';
+    ctx.fillRect(player.x + 5, player.y + 10, player.width - 10, 15);
+    
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(player.x + 10, player.y + 15, 5, 5);
+    ctx.fillRect(player.x + 25, player.y + 15, 5, 5);
+    
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(player.x + 10, player.y + 22, 20, 3);
+
+    // Draw shield if active
+    if (player.hasShield) {
+      ctx.strokeStyle = '#00FFFF'; // Cyan color for shield
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(player.x + player.width / 2, player.y + player.height / 2, 30, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    gameLoopRef.current = requestAnimationFrame(gameLoop);
+  };
+
+  useEffect(() => {
+    if (gameState === 'playing') {
+      gameLoopRef.current = requestAnimationFrame(gameLoop);
+    }
+    return () => {
+      if (gameLoopRef.current) {
+        cancelAnimationFrame(gameLoopRef.current);
+      }
+    };
+  }, [gameState, currentLevel, powerups]); // Add powerups to dependency array for constant recalculation
+
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-blue-400 via-blue-300 to-green-200 p-4 md:p-8">
+      <div className="max-w-4xl mx-auto">
+        <div className="text-center mb-6">
+          <h1 className="text-4xl md:text-5xl font-bold text-white drop-shadow-lg mb-2">
+            🍄 Super Jump Game 🍄
+          </h1>
+          <p className="text-white text-lg drop-shadow">
+            Springe auf die Plattformen und erreiche die Flagge!
+          </p>
+        </div>
+
+        <Card className="shadow-2xl border-4 border-yellow-400 mb-4">
+          <CardHeader className="bg-gradient-to-r from-red-500 to-red-600 text-white">
+            <div className="flex justify-between items-center flex-wrap gap-4">
+              <div className="flex items-center gap-3">
+                <Star className="w-6 h-6" />
+                <div>
+                  <p className="text-sm opacity-90">Level</p>
+                  <p className="text-2xl font-bold">{currentLevel}/4</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <Coins className="w-6 h-6" />
+                <div>
+                  <p className="text-sm opacity-90">Münzen</p>
+                  <p className="text-2xl font-bold">{totalCoins}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <Heart className="w-6 h-6" />
+                <div>
+                  <p className="text-sm opacity-90">Leben</p>
+                  <p className="text-2xl font-bold">{lives}</p>
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                className="bg-white hover:bg-gray-100 text-red-600"
+                onClick={() => setShowShop(!showShop)}
+              >
+                <ShoppingBag className="w-5 h-5 mr-2" />
+                Shop
+              </Button>
+            </div>
+            {gameState === 'playing' && (
+              <div className="mt-3 text-center">
+                <p className="text-lg font-semibold">{levels[currentLevel].name}</p>
+              </div>
+            )}
+          </CardHeader>
+          
+          <CardContent className="p-6 bg-white">
+            {showShop ? (
+              <div className="space-y-4">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-2xl font-bold">🛒 Power-Up Shop</h2>
+                  <Button variant="outline" onClick={() => setShowShop(false)}>
+                    Zurück zum Spiel
+                  </Button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {shopItems.map(item => {
+                    const Icon = item.icon;
+                    const canBuy = totalCoins >= item.cost;
+                    const isOwned = item.type === 'upgrade' && powerups[item.id];
+                    
+                    return (
+                      <Card key={item.id} className={`${isOwned ? 'bg-green-50 border-green-400' : ''}`}>
+                        <CardHeader>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className={`${item.color} p-3 rounded-lg`}>
+                                <Icon className="w-6 h-6 text-white" />
+                              </div>
+                              <div>
+                                <h3 className="font-bold">{item.name}</h3>
+                                {isOwned && <Badge className="mt-1 bg-green-600">Gekauft</Badge>}
+                                {item.id === 'shield' && powerups.shield > 0 && (
+                                  <Badge className="mt-1 bg-purple-600">{powerups.shield}x</Badge>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </CardHeader>
+                        <CardContent>
+                          <p className="text-sm text-gray-600 mb-4">{item.description}</p>
+                          <div className="flex justify-between items-center">
+                            <div className="flex items-center gap-1 text-yellow-600 font-bold">
+                              <Coins className="w-5 h-5" />
+                              {item.cost}
+                            </div>
+                            <Button
+                              onClick={() => buyItem(item)}
+                              disabled={!canBuy || (isOwned && item.type === 'upgrade')}
+                              size="sm"
+                              className={canBuy ? 'bg-green-500 hover:bg-green-600 text-white' : 'bg-gray-300 text-gray-600 cursor-not-allowed'}
+                            >
+                              {isOwned && item.type === 'upgrade' ? 'Besessen' : 'Kaufen'}
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+                
+                <Card className="bg-blue-50 border-blue-400">
+                  <CardContent className="p-4">
+                    <h3 className="font-bold mb-2">Aktive Power-Ups:</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {powerups.speedBoost && <Badge className="bg-yellow-500">⚡ Geschwindigkeits-Boost</Badge>}
+                      {powerups.superJump && <Badge className="bg-blue-500">🚀 Super Sprung</Badge>}
+                      {powerups.shield > 0 && <Badge className="bg-purple-500">🛡️ Schild ({powerups.shield})</Badge>}
+                      {powerups.doubleCoins && <Badge className="bg-green-500">💰 Doppelte Münzen</Badge>}
+                      {!powerups.speedBoost && !powerups.superJump && powerups.shield === 0 && !powerups.doubleCoins && (
+                        <p className="text-gray-500 text-sm">Keine aktiven Power-Ups</p>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            ) : (
+              <div className="relative">
+                <canvas
+                  ref={canvasRef}
+                  width={800}
+                  height={600}
+                  className="w-full border-4 border-blue-500 rounded-lg shadow-inner bg-sky-200"
+                  style={{ maxWidth: '100%', height: 'auto' }}
+                />
+                
+                {gameState === 'ready' && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-60 rounded-lg">
+                    <div className="text-center space-y-6 p-8">
+                      <h2 className="text-4xl font-bold text-white mb-4">
+                        Bereit zum Springen?
+                      </h2>
+                      <div className="text-white space-y-2 mb-6">
+                        <p className="text-lg">🎮 Steuerung:</p>
+                        <p>← → oder A/D = Bewegen</p>
+                        <p>LEERTASTE oder ↑ = Springen</p>
+                        <p className="text-yellow-300 mt-4">🪙 Sammle Münzen für den Shop!</p>
+                        <p className="text-red-300">⚠️ Vermeide die Gegner!</p>
+                        <p className="text-green-300 mt-2">🏆 4 Level zu meistern!</p>
+                      </div>
+                      <Button
+                        onClick={startGame}
+                        size="lg"
+                        className="bg-green-500 hover:bg-green-600 text-white text-xl px-8 py-6"
+                      >
+                        <Play className="w-6 h-6 mr-2" />
+                        Spiel Starten
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {gameState === 'levelComplete' && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-70 rounded-lg">
+                    <div className="text-center space-y-6 p-8">
+                      <Star className="w-24 h-24 text-yellow-400 mx-auto animate-bounce" />
+                      <h2 className="text-5xl font-bold text-yellow-400 mb-4">
+                        Level Geschafft! 🎉
+                      </h2>
+                      <p className="text-white text-xl">
+                        Level {currentLevel}: {levels[currentLevel].name}
+                      </p>
+                      <p className="text-white text-2xl">
+                        Punkte: {score}
+                      </p>
+                      {currentLevel < 4 ? (
+                        <div className="space-y-3">
+                          <Button
+                            onClick={nextLevel}
+                            size="lg"
+                            className="bg-green-500 hover:bg-green-600 text-white text-xl px-8 py-6 w-full"
+                          >
+                            <Star className="w-6 h-6 mr-2" />
+                            Nächstes Level
+                          </Button>
+                          <Button
+                            onClick={() => setShowShop(true)}
+                            size="lg"
+                            variant="outline"
+                            className="text-xl px-8 py-6 w-full bg-white text-red-600 hover:bg-gray-100"
+                          >
+                            <ShoppingBag className="w-6 h-6 mr-2" />
+                            Shop Besuchen
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          <p className="text-yellow-300 text-3xl font-bold">
+                            Alle Level Geschafft! 🏆
+                          </p>
+                          <Button
+                            onClick={startGame}
+                            size="lg"
+                            className="bg-blue-500 hover:bg-blue-600 text-white text-xl px-8 py-6"
+                          >
+                            <RotateCcw className="w-6 h-6 mr-2" />
+                            Von Vorne Beginnen
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {gameState === 'gameOver' && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-70 rounded-lg">
+                    <div className="text-center space-y-6 p-8">
+                      <h2 className="text-5xl font-bold text-red-500 mb-4">
+                        Game Over!
+                      </h2>
+                      <p className="text-white text-xl">
+                        Level {currentLevel}: {levels[currentLevel].name}
+                      </p>
+                      <p className="text-white text-2xl">
+                        Punkte: {score}
+                      </p>
+                      <div className="flex gap-4 justify-center flex-wrap">
+                        <Button
+                          onClick={restartLevel}
+                          size="lg"
+                          className="bg-orange-500 hover:bg-orange-600 text-white text-xl px-8 py-6"
+                        >
+                          <RotateCcw className="w-6 h-6 mr-2" />
+                          Level Wiederholen
+                        </Button>
+                        <Button
+                          onClick={startGame}
+                          size="lg"
+                          variant="outline"
+                          className="text-xl px-8 py-6 text-red-600 hover:bg-gray-100"
+                        >
+                          Neu Starten
+                        </Button>
+                        <Button
+                          onClick={() => setShowShop(true)}
+                          size="lg"
+                          className="bg-purple-500 hover:bg-purple-600 text-white text-xl px-8 py-6"
+                        >
+                          <ShoppingBag className="w-6 h-6 mr-2" />
+                          Shop
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {gameState === 'won' && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-70 rounded-lg">
+                    <div className="text-center space-y-6 p-8">
+                      <Trophy className="w-24 h-24 text-yellow-400 mx-auto animate-bounce" />
+                      <h2 className="text-5xl font-bold text-yellow-400 mb-4">
+                        Alle Level Gemeistert! 🎉
+                      </h2>
+                      <p className="text-white text-3xl">
+                        Endpunkte: {score}
+                      </p>
+                      <p className="text-yellow-300 text-2xl">
+                        Gesammelte Münzen: {totalCoins}
+                      </p>
+                      <Button
+                        onClick={startGame}
+                        size="lg"
+                        className="bg-green-500 hover:bg-green-600 text-white text-xl px-8 py-6"
+                      >
+                        <RotateCcw className="w-6 h-6 mr-2" />
+                        Nochmal Spielen
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {!showShop && ( // Hide level cards when shop is open
+          <div className="mt-6 grid grid-cols-1 md:grid-cols-4 gap-4">
+            {Object.entries(levels).map(([num, level]) => (
+              <Card 
+                key={num}
+                className={`bg-white bg-opacity-90 shadow-lg ${
+                  parseInt(num) === currentLevel ? 'border-4 border-yellow-400' : ''
+                }`}
+              >
+                <CardContent className="p-4 text-center">
+                  <p className="font-bold text-lg mb-1">Level {num}</p>
+                  <p className="text-sm text-gray-600">{level.name}</p>
+                  <div className="mt-2 flex justify-center gap-2">
+                    <span className="text-xs bg-red-100 px-2 py-1 rounded">
+                      {level.enemies.length} Gegner
+                    </span>
+                    <span className="text-xs bg-yellow-100 px-2 py-1 rounded">
+                      {level.coins.length} Münzen
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
